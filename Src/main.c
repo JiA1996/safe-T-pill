@@ -62,38 +62,52 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+
 RTC_HandleTypeDef hrtc;
-RTC_TimeTypeDef sTime;
-RTC_DateTypeDef sDate;
+
 SPI_HandleTypeDef hspi2;
 
+TIM_HandleTypeDef htim1;
 TIM_HandleTypeDef htim2;
-int tim_flag = 1;
+TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
+
 UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
-
-char time_time[5] = "time\n";
-int minutes_match = 4;//used to check real time
-int hours_match = 15;
+RTC_TimeTypeDef sTime;
+RTC_DateTypeDef sDate;
+char rxData[400];
+char update_request[10] = "update003\n";
+uint8_t adcvalue[10];
+int buzzer_flag = 1;
+int tmp_min = 0;
+int buzzer_on = 1;
+int pill_list[10];  //display number on 7_seg LEDs
+int empty_list[10]; //the index for empty valid segment
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_RTC_Init(void);
 static void MX_UART4_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_SPI2_Init(void);
 static void MX_TIM2_Init(void);
+static void MX_TIM4_Init(void);
+static void MX_TIM3_Init(void);
+static void MX_TIM1_Init(void);
+static void MX_ADC1_Init(void);
 /* USER CODE BEGIN PFP */
-
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
 /* USER CODE END 0 */
 
 /**
@@ -103,7 +117,19 @@ static void MX_TIM2_Init(void);
 int main(void)
 {
   /* USER CODE BEGIN 1 */
-
+	int * hour[10];
+	int * minute[10];
+	int * pill_num[10];
+	for(int i=0; i < 10; i++) {
+		pill_num[i] = (int *)malloc(5 * sizeof(int));
+		hour[i] =     (int *)malloc(5 * sizeof(int));
+		minute[i] =   (int *)malloc(5 * sizeof(int));
+		for (int j = 0; j < 5; j++){
+			pill_num[i][j] = 0;
+			hour[i][j] = 77;
+			minute[i][j] = 77;
+		}
+	}
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -123,93 +149,126 @@ int main(void)
   /* USER CODE END SysInit */
 
   /* Initialize all configured peripherals */
+ // int count = 0;
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_RTC_Init();
   MX_UART4_Init();
   MX_USART2_UART_Init();
   MX_SPI2_Init();
   MX_TIM2_Init();
+  MX_TIM4_Init();
+  MX_TIM3_Init();
+  MX_TIM1_Init();
+  MX_ADC1_Init();
   /* USER CODE BEGIN 2 */
-  sDate.Date = 27;
-  sDate.Month = RTC_MONTH_FEBRUARY;
-  sDate.WeekDay = RTC_WEEKDAY_WEDNESDAY;
-  sDate.Year = 19;
-  HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
-  char email_request_fill[14];
-  email_request_fill[10] = 'f';
-  email_request_fill[11] = '1';
-  email_request_fill[12] = '2';
-  email_request_fill[13] = '3';
-  char* email_request_time[10] = {"0t123\n", "1t123\n", "2t123\n", "3t123\n", "4t123\n", "5t123\n", "6t123\n", "7t123\n", "8t123\n", "9t123\n"};
-  ///////////////////////////////////////////////////email_boxindex_time_to_take-pill
-  //char e0t[6] = "0t123\n", e1t[6] = "1t123\n", e2t[6] = "2t123\n", e3t[6] = "3t123\n", e4t[6] = "4t123\n",
-//		  e5t[6] = "5t123\n", e6t[6] = "6t123\n", e7t[6] = "7t123\n", e8t[6] = "8t123\n", e9t[6] = "9t123\n";
-  ///////////////////////////////////////////////////email_boxindex_need_update
-  char update_request[7] = "update\n";
-  char time_to_take_pill[30] = "time to take pill!\n";
-  //int update_timer = 1;
-  int * pill_num[10];
-  int * hour[10];
-  int * minute[10];
-
-  //int buzzer = 0;
-
+	sDate.Date = 27;
+	sDate.Month = RTC_MONTH_FEBRUARY;
+	sDate.WeekDay = RTC_WEEKDAY_WEDNESDAY;
+	sDate.Year = 19;
+	HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+	char er_ft[26];
+	er_ft[22] = '0';
+	er_ft[23] = '0';
+	er_ft[24] = '3';
+	er_ft[25] = '\n';
+	HAL_TIM_Base_Start_IT(&htim2);
+	HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adcvalue, 10);
+	char* prev_time = malloc(sizeof(char) * 7);
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  HAL_TIM_Base_Start_IT(&htim2);
-  char rxData[400];
-  while (1)
-    {
+
+	while (1){
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  /* set time */
-	  HAL_UART_Transmit(&huart4, time_time, sizeof(time_time), 1000);
-	  memset(rxData, 0, sizeof(rxData));
-	  HAL_UART_Receive(&huart4, rxData, sizeof(rxData), 10000);
-	  HAL_UART_Transmit(&huart2, rxData, sizeof(rxData), 1000);//mcu->tera
-	  set_time(rxData);
 
+		/* initiaize email request */
+		for (int a = 0; a < 22; a++){
+			er_ft[a] = 'n';
+		}
+		er_ft[0] = 'f';
+		er_ft[11] = 't';
 
-	  /* send update request and parse dosage info*/
-	  memset(rxData, 0, sizeof(rxData));
-	  HAL_UART_Transmit(&huart4, update_request, 7, 1000);
-	  HAL_UART_Receive(&huart4, rxData, sizeof(rxData), 12000);
-	  HAL_UART_Transmit(&huart2, rxData, sizeof(rxData), 1000);//mcu->tera
-	  char dosage_info[400];
-	  strncpy(dosage_info, rxData+12, 400);
-	  parse(&pill_num, &hour, &minute, dosage_info);
+		/* send update request and receive time + dosage information */
 
+		HAL_UART_Transmit(&huart4, update_request, sizeof(update_request), 3000);
+		HAL_UART_Transmit(&huart2, update_request, sizeof(update_request), 1000);
+		memset(rxData, 0, sizeof(rxData));
+		HAL_UART_Receive(&huart4, rxData, 200, 20000);
 
-	  /* sensor check */
-	  int * sensors = check_sensors();
-	  for(int a = 0; a < 10; a++){//check sensor
-		  if(sensors[a] == 1){//change to check multiple segments
-			  email_request_fill[a] = a + '0';
-		  }else{
-			  email_request_fill[a] = 'n';
-		  }
-	  }
-	  memset(rxData, 0, sizeof(rxData));
-	  HAL_UART_Transmit(&huart4, email_request_fill, 20, 1000);
-	  HAL_UART_Receive(&huart4, rxData, sizeof(rxData), 10000);
+		/* parse time for RTC parse dosage information and store dosage time and pill numbers */
+		char* time_tmp = malloc(sizeof(char) * 7);
+		int num_sensor = 0;
+		if (strlen(rxData) > 5){
+			strncpy(time_tmp, rxData, 6);
+			set_time(time_tmp);
+			char* dose_tmp = malloc(sizeof(char) * (strlen(rxData)));
+			dose_tmp = realloc(dose_tmp, sizeof(char) * (strlen(rxData)));//information for one segment info
+			strncpy(dose_tmp, rxData + 6, strlen(rxData));
+			if (strlen(dose_tmp) > 6 && dose_tmp[0] == 'p') {
+				char bla[7] = " parse ";
+				HAL_UART_Transmit(&huart2, bla, sizeof(bla), 100);   //parse
+				HAL_UART_Transmit(&huart2, dose_tmp, strlen(dose_tmp), 1000);
+				num_sensor = parse(&pill_num, &hour, &minute, dose_tmp);
+			}
+		}
+		HAL_Delay(3500);
 
-  	for(int a = 0; a < 10; a++){//loop through segments 0-9
-  		for (int b = 0; b < 5; b++)
-  		if((minute[a][b] == sTime.Minutes) && (hour[a][b] == sTime.Hours)){
-  			HAL_UART_Transmit(&huart2, time_to_take_pill, sizeof(time_to_take_pill), 10000);
+		/* check sensor */
+		int sensor_kkp = 0;
+		for(int a = 0; a < num_sensor - 1; a++){
+			if(adcvalue[a] < 70){
+				HAL_TIM_Base_Start_IT(&htim4);
+				er_ft[a+1] = a + '0';
+				sensor_kkp = 1;
+				empty_list[a] = 1;
+			}else{
+				er_ft[a+1] = 'n';
+				empty_list[a] = 0;//
+			}
+		}
 
-  			HAL_UART_Transmit(&huart2, email_request_time[a], 6, 10000);//mcu->esp
-  			char tmp_buffer[4];
-  			HAL_UART_Transmit(&huart2,tmp_buffer,sprintf(tmp_buffer,"p%d\n",pill_num[a][b]), 10000);
-  		}
-  	}
-
-  	//memset(rxData, 0, sizeof(rxData));
-  	HAL_Delay(5000);
-    }
+		/* send time to take pill request */
+		int minutes = sTime.Minutes + sTime.Hours * 60;
+		int pill_time = 0;
+		int time_kkp = 0;
+		int meijinru = 1;
+		if (sTime.Minutes == tmp_min){
+			buzzer_on = 0;
+		} else {
+			buzzer_on = 1;
+		}
+		for(int a = 0; a < 10; a++){
+			meijinru = 1;
+			for (int b = 0; b < 5; b++){
+				pill_time = minute[a][b] + hour[a][b] * 60;
+				if(pill_time == minutes) {
+					if (buzzer_on == 1) {
+						HAL_TIM_Base_Start_IT(&htim4);
+						buzzer_on = 0;
+						tmp_min = minute[a][b];
+					}
+					pill_list[a] = pill_num[a][b];
+					meijinru = 0;
+					er_ft[a+12] = a + '0';
+					time_kkp = 1;
+				}
+			}
+			if (meijinru == 1){
+				pill_list[a] = 0;
+				er_ft[a+12] = 'n';
+			}
+		}
+		if (time_kkp == 1 || sensor_kkp == 1){
+			HAL_UART_Transmit(&huart2, er_ft, sizeof(er_ft), 1000);
+			HAL_Delay(2000);
+			HAL_UART_Transmit(&huart4, er_ft, sizeof(er_ft), 10000);
+			HAL_Delay(4000);
+		}
+	}
   /* USER CODE END 3 */
 }
 
@@ -233,7 +292,12 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.LSIState = RCC_LSI_ON;
-  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_NONE;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
+  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLN = 64;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 4;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
   {
     Error_Handler();
@@ -242,8 +306,8 @@ void SystemClock_Config(void)
   */
   RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_HSI;
-  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV4;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV1;
   RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
 
@@ -257,6 +321,128 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+  /**Configure the global features of the ADC (Clock, Resolution, Data Alignment and number of conversion) 
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_SYNC_PCLK_DIV8;
+  hadc1.Init.Resolution = ADC_RESOLUTION_8B;
+  hadc1.Init.ScanConvMode = ENABLE;
+  hadc1.Init.ContinuousConvMode = ENABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_NONE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 10;
+  hadc1.Init.DMAContinuousRequests = ENABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Rank = 1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_480CYCLES;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = 2;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_2;
+  sConfig.Rank = 3;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_3;
+  sConfig.Rank = 4;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_4;
+  sConfig.Rank = 5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_5;
+  sConfig.Rank = 6;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_6;
+  sConfig.Rank = 7;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_7;
+  sConfig.Rank = 8;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_8;
+  sConfig.Rank = 9;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
+  */
+  sConfig.Channel = ADC_CHANNEL_9;
+  sConfig.Rank = 10;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
 }
 
 /**
@@ -360,6 +546,79 @@ static void MX_SPI2_Init(void)
 }
 
 /**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+  TIM_BreakDeadTimeConfigTypeDef sBreakDeadTimeConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 0;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 0;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_OC_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_TIMING;
+  sConfigOC.Pulse = 0;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCNPolarity = TIM_OCNPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCIdleState = TIM_OCIDLESTATE_RESET;
+  sConfigOC.OCNIdleState = TIM_OCNIDLESTATE_RESET;
+  if (HAL_TIM_OC_ConfigChannel(&htim1, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sBreakDeadTimeConfig.OffStateRunMode = TIM_OSSR_DISABLE;
+  sBreakDeadTimeConfig.OffStateIDLEMode = TIM_OSSI_DISABLE;
+  sBreakDeadTimeConfig.LockLevel = TIM_LOCKLEVEL_OFF;
+  sBreakDeadTimeConfig.DeadTime = 0;
+  sBreakDeadTimeConfig.BreakState = TIM_BREAK_DISABLE;
+  sBreakDeadTimeConfig.BreakPolarity = TIM_BREAKPOLARITY_HIGH;
+  sBreakDeadTimeConfig.AutomaticOutput = TIM_AUTOMATICOUTPUT_DISABLE;
+  if (HAL_TIMEx_ConfigBreakDeadTime(&htim1, &sBreakDeadTimeConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
   * @brief TIM2 Initialization Function
   * @param None
   * @retval None
@@ -377,11 +636,10 @@ static void MX_TIM2_Init(void)
   /* USER CODE BEGIN TIM2_Init 1 */
 
   /* USER CODE END TIM2_Init 1 */
-  __TIM2_CLK_ENABLE();
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 16000;
+  htim2.Init.Prescaler = 2000;
   htim2.Init.CounterMode = TIM_COUNTERMODE_UP;
-  htim2.Init.Period = 1000;
+  htim2.Init.Period = 26;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
   if (HAL_TIM_Base_Init(&htim2) != HAL_OK)
   {
@@ -400,8 +658,99 @@ static void MX_TIM2_Init(void)
   }
   /* USER CODE BEGIN TIM2_Init 2 */
   //htim2.Init.RepetitionCounter = 0;
-  HAL_TIM_Base_Start(&htim2);
   /* USER CODE END TIM2_Init 2 */
+
+}
+
+/**
+  * @brief TIM3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM3_Init(void)
+{
+
+  /* USER CODE BEGIN TIM3_Init 0 */
+
+  /* USER CODE END TIM3_Init 0 */
+
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
+
+  /* USER CODE BEGIN TIM3_Init 1 */
+
+  /* USER CODE END TIM3_Init 1 */
+  htim3.Instance = TIM3;
+  htim3.Init.Prescaler = 160;
+  htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim3.Init.Period = 32;
+  htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  if (HAL_TIM_PWM_Init(&htim3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim3, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 16;
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  if (HAL_TIM_PWM_ConfigChannel(&htim3, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM3_Init 2 */
+
+  /* USER CODE END TIM3_Init 2 */
+  HAL_TIM_MspPostInit(&htim3);
+
+}
+
+/**
+  * @brief TIM4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM4_Init(void)
+{
+
+  /* USER CODE BEGIN TIM4_Init 0 */
+
+  /* USER CODE END TIM4_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM4_Init 1 */
+
+  /* USER CODE END TIM4_Init 1 */
+  htim4.Instance = TIM4;
+  htim4.Init.Prescaler = 16000;
+  htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim4.Init.Period = 2000;
+  htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim4, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim4, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM4_Init 2 */
+
+  /* USER CODE END TIM4_Init 2 */
 
 }
 
@@ -471,6 +820,21 @@ static void MX_USART2_UART_Init(void)
 
 }
 
+/** 
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void) 
+{
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA2_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA2_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream0_IRQn);
+
+}
+
 /**
   * @brief GPIO Initialization Function
   * @param None
@@ -481,185 +845,103 @@ static void MX_GPIO_Init(void)
   GPIO_InitTypeDef GPIO_InitStruct = {0};
 
   /* GPIO Ports Clock Enable */
-  __GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_11|GPIO_PIN_12, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOD, GPIO_PIN_12|GPIO_PIN_3, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PD11 PD12 */
-  GPIO_InitStruct.Pin = GPIO_PIN_11|GPIO_PIN_12;
+  /*Configure GPIO pins : PD12 PD3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_12|GPIO_PIN_3;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_HIGH;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-  UNUSED(htim);
-  //HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
-  ///////////////////////1    eb    2    4c  3    49    4   2b   5    59     6     18    7			8			9=256
-  uint8_t dataOut[30] = {0x00,0x01,0xeb,0x00,0x02,0x4c,0x00,0x04,0x49,0x00,0x08,0x2b,0x00,0x10,0x59,0x00, 0x20, 0x18,0x00, 0x40, 0xcb,0x00, 0x80, 0x08, 0x01, 0x00, 0x0b, 0x02, 0x00, 0x1c}; //code for data output, second byte is for
-  uint8_t led_index[10] = {0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x100, 0x200};
-  uint8_t truth_table[10] = {0x1c, 0xeb, 0x4c, 0x49, 0x3b, 0x59, 0x18, 0xcb, 0x08, 0x0b};
-
-  if (tim_flag == 1) {
-  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_11, GPIO_PIN_RESET);
-  	HAL_SPI_Transmit(&hspi2,dataOut, 1, 100);
-  	HAL_SPI_Transmit(&hspi2,dataOut + 1, 1, 100);
-  	HAL_SPI_Transmit(&hspi2,dataOut + 2, 1, 100);
-  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_11, GPIO_PIN_SET);
-  	tim_flag = 2;
-  }
-  else if (tim_flag == 2) {
-
-  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_11, GPIO_PIN_RESET);
-  	HAL_SPI_Transmit(&hspi2,dataOut + 3, 1, 100);
-
-  	HAL_SPI_Transmit(&hspi2,dataOut + 4, 1, 100);
-  	HAL_SPI_Transmit(&hspi2,dataOut + 5, 1, 100);
-  	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_11, GPIO_PIN_SET);
-  	tim_flag = 3;
-  }
-  else if (tim_flag == 3) {
-	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_11, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(&hspi2,dataOut + 6, 1, 100);
-	HAL_SPI_Transmit(&hspi2,dataOut + 7, 1, 100);
-	HAL_SPI_Transmit(&hspi2,dataOut + 8, 1, 100);
-	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_11, GPIO_PIN_SET);
-	tim_flag = 1;
-  }
-  /*else if (tim_flag == 9) {
-	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_11, GPIO_PIN_RESET);
-	HAL_SPI_Transmit(&hspi2,dataOut+24, 1, 100);
-	HAL_SPI_Transmit(&hspi2,dataOut+25, 1, 100);
-	HAL_SPI_Transmit(&hspi2,dataOut+26, 1, 100);
-	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_11, GPIO_PIN_SET);
-	tim_flag = 1;
-  }*/
-
-}
-
-
-int * check_sensors(){
-    int sensor0 = 0, sensor1 = 0, sensor2 = 0, sensor3 = 0, sensor4 = 0, sensor5 = 0, sensor6 = 0, sensor7 = 0, sensor8 = 0, sensor9 = 0;//index for each sensor
-	sensor0 = HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12);
-	sensor1 = HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12);
-	sensor2 = HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12);
-	sensor3 = HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12);
-	sensor4 = HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12);
-	sensor5 = HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12);
-	sensor6 = HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12);
-	sensor7 = HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12);
-	sensor8 = HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12);
-	sensor9 = HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12);
-	static int arr[10];
-	arr[0] = sensor0; arr[1] = sensor1; arr[2] = sensor2; arr[3] = sensor3; arr[4] = sensor4;
-	arr[5] = sensor5; arr[6] = sensor6; arr[7] = sensor7; arr[8] = sensor8; arr[9] = sensor9;
-	return arr;
-}
-
 void set_time(char* rxData)
 {
-	char tmph[2]; char tmpm[2]; char tmps[2];
-	strncpy(tmph, rxData+12,2);
-	int update_hour = atoi(tmph);
-	strncpy(tmpm, rxData+14,2);
-	int update_minute = atoi(tmpm);
-	strncpy(tmps, rxData+16,2);
-	int update_second = atoi(tmps);
-	char time_test[10] = "mcutime:";
-	HAL_UART_Transmit(&huart2, time_test, sizeof(time_test), 100);//hour
-	HAL_UART_Transmit(&huart2, tmph, sizeof(tmph), 100);//hour
-	HAL_UART_Transmit(&huart2, tmpm, sizeof(tmpm), 100);//minute
-	HAL_UART_Transmit(&huart2, tmps, sizeof(tmps), 100);//second
-	sTime.Hours = update_hour;
-	sTime.Minutes = update_minute;
-	sTime.Seconds = update_second;
-	HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-	HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-	HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+  char tmph[3]; char tmpm[3]; char tmps[3];
+  strncpy(tmph, rxData,2);
+  int update_hour = atoi(tmph);
+  strncpy(tmpm, rxData + 2,2);
+  int update_minute = atoi(tmpm);
+  strncpy(tmps, rxData + 4,2);
+  int update_second = atoi(tmps);
+  char blaa[10] = " set time ";
+  HAL_UART_Transmit(&huart2, blaa, sizeof(blaa), 100);//set time
+  HAL_UART_Transmit(&huart2, tmph, sizeof(tmph), 100);//hour
+  HAL_UART_Transmit(&huart2, tmpm, sizeof(tmpm), 100);//minute
+  HAL_UART_Transmit(&huart2, tmps, sizeof(tmps), 100);//second
+  sTime.Hours = update_hour;
+  sTime.Minutes = update_minute;
+  sTime.Seconds = update_second;
+
+  HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+  HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+  HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
 }
 
-void parse(int ** pill_num, int ** hour, int ** minute, char * dosage_info)
+int parse(int ** pill_num, int ** hour, int ** minute, char * dosage_info)
 {
-    int i = 0, j = 0;
-    for(i=0; i < 10; i++) {
-        pill_num[i] = (int *)malloc(5 * sizeof(int));
-        hour[i] = (int *)malloc(5 * sizeof(int));
-        minute[i] = (int *)malloc(5 * sizeof(int));
-    }
+	char tmp_buffer[4];
+	char tmp_buffe[4];
+	char* boxid = (char*) calloc(2, sizeof(char));
+	int start=0;
+	int end=0;
+	int seg_id=0;
+	int ind = 0;
+	char* tmp_hour = calloc(3, sizeof(char));
+	char* tmp_min = calloc(3, sizeof(char));
+	char* tmp_num = calloc(2, sizeof(char));
 
-    //char * info2 = "p0t0830n2t1120n3t2045n2\n";
-    //char * info = "p0t0830n2t1120n3t2045n2p1t0920n1t1230n1t2210n5p2t1015n6t2305n6\n";
-    int start=0;//cursor c1
-    int end=0;//cursor c2
-    int seg_id=0;//index of the segment on pill box
-    int ind = 0;//index indicates number of times to take pill
-    //get dosage_info for each segment
-    while (dosage_info[start]!='\n'){
-        if(dosage_info[start]=='p') {
-            end=start + 1;
-            while(dosage_info[end] != '\n'){
-                if(dosage_info[end] == 'p'){
-                    break;
-                }else{
-                    end++;
-                }
-            }
-            //printf("%d, %d\n",start,end);
-            int length = end - start;
-            char* tmpinfo = malloc(sizeof(char) * length);//information for one segment info
-            strncpy(tmpinfo, dosage_info+start,end-start);
-            //printf("%s\n",tmpinfo);
-            int sub_cursor = 3;
-            char boxid [1]; strncpy(boxid, tmpinfo+1,1);
-            seg_id = atoi(boxid);
-            ind=0;
-            while(sub_cursor < length){//store dosage_information in stm32
-                char* tmp_hour = malloc(sizeof(char)*2);
-                char* tmp_min = malloc(sizeof(char)*2);
-                char* tmp_num = malloc(sizeof(char)*1);
-                strncpy(tmp_hour, tmpinfo + sub_cursor, 2);
-                char tmp_buffer[10];
-
-                sub_cursor += 2;
-                hour[seg_id][ind] = atoi(tmp_hour);
-                strncpy(tmp_min, tmpinfo + sub_cursor, 2);
-                sub_cursor += 3;
-                minute[seg_id][ind] = atoi(tmp_min);
-                strncpy(tmp_num, tmpinfo + sub_cursor, 1);
-                sub_cursor += 2;
-                pill_num[seg_id][ind] = atoi(tmp_num);
-                ind ++;
-                free(tmp_hour); free(tmp_min); free(tmp_num);
-            }
-             while(ind < 5){//generate invalid values
-                pill_num[seg_id][ind]=0;
-                hour[seg_id][ind]=77;
-                minute[seg_id][ind]=77;
-                ind ++;
-            }
-            free(tmpinfo);
-            start=end;
-        }
-        else{start ++;}
-    }
-    ind = 0;
-    seg_id++;
-    while(seg_id < 10){
-        for(ind = 0; ind < 5; ind ++){
-            pill_num[seg_id][ind]=0;
-            hour[seg_id][ind]=77;
-            minute[seg_id][ind]=77;
-        }
-        seg_id ++;
-    }
+	//get dosage_info for each segment
+	int nuum = 0;
+	while (dosage_info[start]!='\n' && start <= strlen(dosage_info)){
+		int sub_cursor = 3;
+		if(dosage_info[start]=='p') {
+			end=start + 1;
+			while(dosage_info[end] != '\n' && end <= strlen(dosage_info)){
+				if(dosage_info[end] == 'p'){
+					break;
+				}else{
+					end++;
+				}
+			}
+			int length = end - start;
+			char* tmpinfo = (char*) calloc((length+1),sizeof(char));
+			strncpy(tmpinfo, dosage_info+start,end-start);
+			nuum++;
+			strncpy(boxid, tmpinfo+1,1);
+			seg_id = atoi(boxid);
+			ind=0;
+			while(sub_cursor < length){//store dosage_information in stm32
+				strncpy(tmp_hour, tmpinfo + sub_cursor, 2);
+				//HAL_UART_Transmit(&huart2,tmp_buffer,sprintf(tmp_buffer,"hour: %s \n",tmp_hour), 10000);
+				sub_cursor += 2;
+				hour[seg_id][ind] = atoi(tmp_hour);
+				strncpy(tmp_min, tmpinfo + sub_cursor, 2);
+				//HAL_UART_Transmit(&huart2,tmp_buffer,sprintf(tmp_buffer,"min: %s \n",tmp_min), 10000);
+				sub_cursor += 3;
+				minute[seg_id][ind] = atoi(tmp_min);
+				strncpy(tmp_num, tmpinfo + sub_cursor, 1);
+				//HAL_UART_Transmit(&huart2,tmp_buffer,sprintf(tmp_buffer,"num: %s \n",tmp_num), 10000);
+				sub_cursor += 2;
+				pill_num[seg_id][ind] = atoi(tmp_num);
+				ind ++;
+			}
+			free(tmpinfo);
+			start=end;
+		}
+		else{start ++;}
+	}
+	ind = 0;
+	seg_id++;
+	return nuum;
 }
 /* USER CODE END 4 */
 
